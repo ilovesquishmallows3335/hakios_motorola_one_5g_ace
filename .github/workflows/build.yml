@@ -1,0 +1,59 @@
+# Save as .github/workflows/uefi-build.yml in YOUR FORK of the UEFI repo, for example
+#   https://github.com/Project-Silicium/Mu-Silicium   (generic)
+#   https://github.com/oosexgang/hakios-uefi          (Mu-Silicium with HakiOS's boot path)
+#
+# It builds the UEFI image for one phone codename and uploads it as an artifact.
+# It can only build a platform that already exists in the repo. For the Moto One 5G Ace
+# (SM7225) I found no existing platform, so commit one to your fork first.
+#
+# Untested. Build steps follow Mu-Silicium's Building.md.
+
+name: Build UEFI
+
+on:
+  workflow_dispatch:
+    inputs:
+      codename:
+        description: "Platform codename to build (the name of its platform in this repo)"
+        required: true
+      mode:
+        description: "Build mode (RELEASE or DEBUG)"
+        default: "RELEASE"
+
+jobs:
+  uefi:
+    runs-on: ubuntu-22.04 # Mu-Silicium recommends Ubuntu 22.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Is there a platform for this codename?
+        run: |
+          if ! find . -path ./.git -prune -o -iname "*${{ inputs.codename }}*" -print | grep -q .; then
+            echo "::error::Nothing named '${{ inputs.codename }}' in this repo. Add the platform first."
+            exit 1
+          fi
+
+      - name: Set up the build environment
+        run: ./setup_env.sh -p apt
+
+      - name: Build
+        run: ./build_uefi.sh -d "${{ inputs.codename }}" -r "${{ inputs.mode }}"
+
+      # The image may contain vendor blobs. Keep the repo private; do not publish it.
+      - name: Upload the image
+        uses: actions/upload-artifact@v4
+        with:
+          name: uefi-${{ inputs.codename }}
+          path: |
+            **/*.img
+            **/*.tar
+            **/*.bin
+          retention-days: 14
